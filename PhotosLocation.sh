@@ -68,11 +68,11 @@ then
 			"SELECT COUNT(*) FROM RKVersion WHERE latitude IS NOT NULL" \
 			".output PhotosLocation.csv" \
 			"
-				SELECT  strftime('%Y/%m/%d',createDate + 978307200.0, 'unixepoch') date,
-					strftime('%H:%M:%S',createDate + 978307200.0, 'unixepoch') time,
+				SELECT  STRFTIME('%Y/%m/%d',imageDate + 978307200.0, 'unixepoch') date,
+					STRFTIME('%H:%M:%S',imageDate + 978307200.0, 'unixepoch') time,
 					latitude, longitude, fileName, 'Near ' || COALESCE(closest_city, '') description
 				FROM (
-					SELECT fileName, createDate, rkv.latitude, rkv.longitude, (
+					SELECT fileName, imageDate, rkv.latitude, rkv.longitude, (
 						SELECT closest_city FROM (
 							SELECT ($EARTH * ACOS(SIN(c5_latitude) * SIN(rkv_latitude) + COS(c5_latitude) * COS(rkv_latitude) * (COS(c5_longitude - rkv_longitude)))) d, asciiname || ' (' || country_code || ')' closest_city
 							FROM cities500 c5
@@ -93,12 +93,12 @@ then
 			".mode csv" \
 			".output PhotosLocation.csv" \
 			"
-				SELECT	strftime('%Y/%m/%d',createDate + 978307200.0, 'unixepoch') date,
-    					strftime('%H:%M:%S',createDate + 978307200.0, 'unixepoch') time,
+				SELECT	STRFTIME('%Y/%m/%d',imageDate + 978307200.0, 'unixepoch') date,
+    					STRFTIME('%H:%M:%S',imageDate + 978307200.0, 'unixepoch') time,
     					latitude, longitude, fileName, '' description
 				FROM RKVersion
 				WHERE latitude IS NOT NULL
-				ORDER BY createDate
+				ORDER BY imageDate
 			" \
 			".output stdout"
 	fi
