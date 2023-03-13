@@ -6,11 +6,15 @@ USER=$(whoami)
 PHOTOS="/Users/$USER/Pictures/Photos Library.photoslibrary"
 if [ -d "$PHOTOS" ]
 then
-	# Copy the Photos Database over so we can read it
-	echo "Copying Photos database ..."
-	cp "$PHOTOS/database/photos.db" .
 	# If we have gcc and homebrew sqlite3 we can do city matching
-	if [ -f /usr/local/opt/sqlite/bin/sqlite3 ] && [ -f /usr/bin/gcc ]
+	if [ -f /usr/local/opt/sqlite/bin/sqlite3 ]
+	then
+		SQLITE3=/usr/local/opt/sqlite
+	elif [ -f /opt/homebrew/opt/sqlite3/bin/sqlite3 ]
+	then
+		SQLITE3=/opt/homebrew/opt/sqlite3
+	fi
+	if [ "$SQLITE3" != "" ] && [ -f /usr/bin/gcc ]
 	then
 		if [ ! -f cities500.zip ]
 		then
@@ -24,18 +28,30 @@ then
 			unzip cities500.zip
 		fi
 
-		echo "Compiling required sqlite extensions ..."
-		gcc -fno-common -dynamiclib extension-functions.c -o libsqlitefunctions.dylib
+		echo "$(date) Compiling required sqlite extensions ..."
+		gcc -fno-common -dynamiclib extension-functions.c -L $SQLITE3/lib -lsqlite3 -o libsqlitefunctions.dylib
+		echo "$(date) Exporting ZASSET & ZADDITIONALASSETATTRIBUTES from $PHOTOS/database/Photos.sqlite ..."
+		$SQLITE3/bin/sqlite3 -readonly "$PHOTOS/database/Photos.sqlite" \
+			".output ZASSET.sql" \
+			".dump ZASSET" \
+			".output ZADDITIONALASSETATTRIBUTES.sql" \
+			".dump ZADDITIONALASSETATTRIBUTES" \
+			".quit"
 
 		# Note: doing radians conversions upfront to speed things up a little
-		echo "Exporting data (warning, this may take some time due to nearest city search) ..."
-		/usr/local/opt/sqlite/bin/sqlite3 photos.db \
-			".load libsqlitefunctions.dylib" \
-			"ALTER TABLE RKVersion ADD COLUMN rkv_latitude  REAL;" \
-			"UPDATE RKVersion SET rkv_latitude = RADIANS(latitude);" \
-			"ALTER TABLE RKVersion ADD COLUMN rkv_longitude REAL;" \
-			"UPDATE RKVersion SET rkv_longitude = RADIANS(longitude);" \
+		echo "$(date) Loading ZASSET and Exporting data (warning, this may take some time due to nearest city search) ..."
+		rm -f PhotosLocation.sqlite
+		$SQLITE3/bin/sqlite3 PhotosLocation.sqlite \
+			".read ZASSET.sql" \
+			".read ZADDITIONALASSETATTRIBUTES.sql" \
+			"ALTER TABLE ZASSET ADD COLUMN zasset_latitude  REAL;" \
+			"UPDATE ZASSET SET zasset_latitude = RADIANS(zlatitude);" \
+			"ALTER TABLE ZASSET ADD COLUMN zasset_longitude REAL;" \
+			"UPDATE ZASSET SET zasset_longitude = RADIANS(zlongitude);" \
 			".mode tab" \
+			"SELECT 'Photos', COUNT(*) FROM ZASSET;" \
+			"SELECT 'Photos with a LatLong', COUNT(*) FROM ZASSET WHERE zlatitude != -180.000;" \
+			"SELECT 'Percentage with a LatLong',ROUND((1.0*SUM(CASE WHEN zlatitude = -180.000 THEN 0 ELSE 1 END) )/(1.0*COUNT(*))*100, 2) FROM ZASSET;" \
 			"
 				CREATE TABLE cities500 (
 					geonameid		INTEGER,
@@ -62,43 +78,51 @@ then
 			".import ./cities500.txt cities500" \
 			"ALTER TABLE cities500 ADD COLUMN c5_latitude  REAL;" \
 			"UPDATE cities500 SET c5_latitude = RADIANS(latitude);" \
+			"CREATE INDEX c5_latitude_idx ON cities500 (c5_latitude);" \
 			"ALTER TABLE cities500 ADD COLUMN c5_longitude REAL;" \
 			"UPDATE cities500 SET c5_longitude = RADIANS(longitude);" \
+			"CREATE INDEX c5_longitude_idx ON cities500 (c5_longitude);" \
+			"SELECT 'Cities 500 Points', COUNT(*) FROM cities500;" \
 			".mode csv" \
-			"SELECT COUNT(*) FROM RKVersion WHERE latitude IS NOT NULL" \
 			".output PhotosLocation.csv" \
 			"
-				SELECT  STRFTIME('%Y/%m/%d',imageDate + 978307200.0, 'unixepoch') date,
-					STRFTIME('%H:%M:%S',imageDate + 978307200.0, 'unixepoch') time,
-					latitude, longitude, fileName, 'Near ' || COALESCE(closest_city, '') description
+				SELECT  STRFTIME('%Y/%m/%d',zDateCreated + 978307200.0, 'unixepoch') date,
+								STRFTIME('%H:%M:%S',zDateCreated + 978307200.0, 'unixepoch') time,
+								zlatitude, zlongitude, '-' name,
+								COALESCE('Near ' || closest_city, '') || '<br/>' || zOriginalfileName description
 				FROM (
-					SELECT fileName, imageDate, rkv.latitude, rkv.longitude, (
+					SELECT zOriginalfileName, zDateCreated, za.zlatitude, za.zlongitude, (
 						SELECT closest_city FROM (
-							SELECT ($EARTH * ACOS(SIN(c5_latitude) * SIN(rkv_latitude) + COS(c5_latitude) * COS(rkv_latitude) * (COS(c5_longitude - rkv_longitude)))) d, asciiname || ' (' || country_code || ')' closest_city
+							SELECT ($EARTH * ACOS(SIN(c5_latitude) * SIN(zasset_latitude) + COS(c5_latitude) * COS(zasset_latitude) * (COS(c5_longitude - zasset_longitude)))) d,
+											asciiname || ' (' || country_code || ')' closest_city
 							FROM cities500 c5
-							WHERE ABS(c5_latitude  - rkv_latitude ) <= $KMS / $EARTH.00000
-							AND   ABS(c5_longitude - rkv_longitude) <= $KMS / $EARTH.00000
+							WHERE c5_latitude  BETWEEN za.zasset_latitude  - $KMS / $EARTH.00000 AND za.zasset_latitude  + $KMS / $EARTH.00000
+							AND   c5_longitude BETWEEN za.zasset_longitude - $KMS / $EARTH.00000 AND za.zasset_longitude + $KMS / $EARTH.00000
 							ORDER BY 1
 							LIMIT 1
 						) WHERE d <= $KMS
 					) closest_city
-					FROM RKVersion rkv
-					WHERE rkv.latitude IS NOT NULL
+					FROM ZASSET za, ZADDITIONALASSETATTRIBUTES zaa
+					WHERE za.zlatitude != -180.000
+					AND   za.z_pk = zaa.zasset
 				) closest
+				ORDER BY zDateCreated
 			" \
-			".output stdout"
+			".output stdout" \
+			".quit"
 	else
-		echo "Exporting data ..."
-		sqlite3 photos.db \
+		echo "$(date) Exporting data ..."
+		$SQLITE3/bin/sqlite3 -readonly Photos.sqlite \
 			".mode csv" \
 			".output PhotosLocation.csv" \
 			"
-				SELECT	STRFTIME('%Y/%m/%d',imageDate + 978307200.0, 'unixepoch') date,
-    					STRFTIME('%H:%M:%S',imageDate + 978307200.0, 'unixepoch') time,
-    					latitude, longitude, fileName, '' description
-				FROM RKVersion
-				WHERE latitude IS NOT NULL
-				ORDER BY imageDate
+				SELECT	STRFTIME('%Y/%m/%d',za.zDateCreated + 978307200.0, 'unixepoch') date,
+    						STRFTIME('%H:%M:%S',za.zDateCreated + 978307200.0, 'unixepoch') time,
+    						za.zlatitude, za.zlongitude, '-' name, zaa.zOriginalfileName description
+				FROM ZASSET za, ZADDITIONALASSETATTRIBUTES zaa
+				WHERE za.zlatitude != -180.000
+				AND   za.z_pk = zaa.zasset
+				ORDER BY za.zDateCreated
 			" \
 			".output stdout"
 	fi
@@ -106,14 +130,13 @@ then
 	GPSBABEL=$(which gpsbabel)
 	if [ "$GPSBABEL" != "" ]
 	then
-		echo "Converting to GPX format ..."
+		echo "$(date) Converting to GPX format ..."
 		gpsbabel -i unicsv,fields=date+time+lat+lon+name+desc -f PhotosLocation.csv -o gpx -F PhotosLocation.gpx
 		open PhotosLocation.gpx
 	fi
 	
-	echo "Cleaning up ..."
-	rm photos.db*
+	echo "$(date) Cleaning up ..."
 	echo "Complete."
 else
-	echo "Unable to locate photos library in $PHOTOS."
+	echo "$(date) Unable to locate photos library in $PHOTOS."
 fi
