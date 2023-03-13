@@ -96,7 +96,7 @@ then
 							SELECT ($EARTH * ACOS(SIN(c5_latitude) * SIN(zasset_latitude) + COS(c5_latitude) * COS(zasset_latitude) * (COS(c5_longitude - zasset_longitude)))) d,
 											asciiname || ' (' || country_code || ')' closest_city
 							FROM cities500 c5
-							WHERE c5_latitude  BETWEEN za.zasset_latitude  - $KMS / $EARTH.00000 AND za.zasset_latitude  + $KMS / $EARTH.00000open .
+							WHERE c5_latitude  BETWEEN za.zasset_latitude  - $KMS / $EARTH.00000 AND za.zasset_latitude  + $KMS / $EARTH.00000
 							AND   c5_longitude BETWEEN za.zasset_longitude - $KMS / $EARTH.00000 AND za.zasset_longitude + $KMS / $EARTH.00000
 							ORDER BY 1
 							LIMIT 1
