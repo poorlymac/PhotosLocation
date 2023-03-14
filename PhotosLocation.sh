@@ -29,14 +29,19 @@ then
 		fi
 
 		echo "$(date) Compiling required sqlite extensions ..."
-		gcc -fno-common -dynamiclib extension-functions.c -L $SQLITE3/lib -lsqlite3 -o libsqlitefunctions.dylib
-		echo "$(date) Exporting ZASSET & ZADDITIONALASSETATTRIBUTES from $PHOTOS/database/Photos.sqlite ..."
+		gcc -fPIC -lm -shared -fno-common -dynamiclib extension-functions.c -L $SQLITE3/lib -lsqlite3 -o libsqlitefunctions.dylib
+		echo "$(date) Exporting ZASSET & ZADDITIONALASSETATTRIBUTES from \"$PHOTOS/database/Photos.sqlite\" ..."
 		$SQLITE3/bin/sqlite3 -readonly "$PHOTOS/database/Photos.sqlite" \
 			".output ZASSET.sql" \
 			".dump ZASSET" \
 			".output ZADDITIONALASSETATTRIBUTES.sql" \
 			".dump ZADDITIONALASSETATTRIBUTES" \
 			".quit"
+		if [ $? -ne 0 ]
+		then
+			echo "Unable to open Photos database, allow the application you're running this Full Disk Access in Privacy & Security System Preferences temporarily"
+			exit 1
+		fi
 
 		# Note: doing radians conversions upfront to speed things up a little
 		echo "$(date) Loading ZASSET and Exporting data (warning, this may take some time due to nearest city search) ..."
